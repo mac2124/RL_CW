@@ -1,14 +1,21 @@
 import torch 
 import torch.nn as nn
 from torch.distributions import MultivariateNormal
-from network import FeedForwardNN
+from .network import FeedForwardNN
+import numpy as np
 
 class PPOAgent:
     def __init__(self, env):
         self._init_hyperparameters()
         self.env = env
-        self.state_dim = env.observation_space.shape[0]
-        self.action_dim = env.action_space.shape[0]
+
+        self.action_dim = env.action_space.n
+
+        if hasattr(env.observation_space, 'shape'):
+            # Calculate the flattened size of the observation space
+            self.state_dim = int(np.prod(env.observation_space.shape))
+        else:
+            raise ValueError("Unsupported observation space type")
 
         self.actor = FeedForwardNN(self.state_dim, self.action_dim)
         self.critic = FeedForwardNN(self.state_dim, 1)
@@ -65,6 +72,10 @@ class PPOAgent:
                 batch_states.append(state)
                 action, log_prob = self.get_action(state)
                 state, reward, done, _ = self.env.step(action)
+
+                # Flatten the state if it is multidimensional
+                if isinstance(state, np.ndarray) and state.ndim > 1:
+                    state = state.flatten()
                 
                 batch_actions.append(action)
                 batch_log_probs.append(log_prob)

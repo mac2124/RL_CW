@@ -17,6 +17,12 @@ class FeedForwardNN(nn.Module):
         if isinstance(x, np.ndarray):
             x = torch.tensor(x, dtype=torch.float)
         
+        # Ensure the input tensor has the correct shape
+        if x.ndim > 2:
+            x = x.reshape(x.size(0), -1)  # Flatten the input if it has more than 2 dimensions
+        elif x.ndim == 1:
+            x = x.unsqueeze(0)  # Add batch dimension if input is a single vector
+        
         activation_input = self.activation_fn(self.input_layer(x))
         activation_hidden = self.activation_fn(self.layer2(activation_input))
         output = self.output_layer(activation_hidden)
