@@ -173,14 +173,20 @@ def main():
     # DQN typically requires a buffer. 
     # Warning: Multiprocessing with Large Replay Buffers + FrameStack can consume massive RAM.
     # If you run out of RAM, reduce n_envs or buffer_size.
-    n_envs = 1
+    n_envs = 4
     venv = VecTransposeImage(VecFrameStack(SubprocVecEnv([make_env] * n_envs), n_stack=4))
 
     model = PPOAgent(
         env=venv,
+        learning_rate=3e-4,
+        gamma=0.99,
+        clip=0.2,
+        timesteps_per_batch=4800,
+        max_ep_len=1600,
+        train_epochs=5,
     )
     print(f"Training DQN on {args.game}...")
-    model.learn(10_000_000 )
+    model.learn(10_000_000, log_interval=1)
     
     # Save the model
     model.save("dqn_mk2")
