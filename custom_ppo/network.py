@@ -21,7 +21,7 @@ class CNNPolicy(nn.Module):
         self.critic = nn.Linear(512, 1)
 
     def forward(self, x):
-        x = x / 255.0
+        x = x.float() / 255.0
         x = self.cnn(x)
         x = self.flatten(x)
         x = self.fc(x)

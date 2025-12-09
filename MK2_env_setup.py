@@ -8,7 +8,7 @@ import numpy as np
 from custom_ppo.ppo import PPOAgent
 from gymnasium.wrappers import TimeLimit
 
-from stable_baselines3.common.atari_wrappers import ClipRewardEnv, WarpFrame
+from stable_baselines3.common.atari_wrappers import MaxAndSkipEnv, WarpFrame
 from stable_baselines3.common.vec_env import (
     SubprocVecEnv,
     VecFrameStack,
@@ -29,7 +29,6 @@ class Discretizer(gym.ActionWrapper):
         super().__init__(env)
         assert isinstance(env.action_space, gym.spaces.MultiBinary)
         buttons = env.unwrapped.buttons
-        print(buttons)
         self._decode_discrete_action = []
         for combo in combos:
             arr = np.array([False] * env.action_space.n)
@@ -119,26 +118,10 @@ def make_retro(*, game, state=None, max_episode_steps=4500, **kwargs):
         # --- BLOCKING (Crucial) ---
         [9],            # 11: Y (Block)
         [5, 9],         # 12: Down + Block (Crouch Block) - ESSENTIAL
-        
-        # --- DIRECTIONAL ATTACKS ---
-        [5, 10],        # 13: Down + High Punch (Uppercut) - High Reward
-        [5, 8],         # 14: Down + Low Kick (Low Poke)
-        [6, 8],         # 15: Left + Low Kick (Sweep/Kick depending on facing)
-        [7, 8],         # 16: Right + Low Kick (Sweep/Kick depending on facing)
-        [6, 11],        # 17: Left + High Kick (Roundhouse)
-        [7, 11],        # 18: Right + High Kick (Roundhouse)
-
-        # --- Jax Combos ---
-        [5,6,10], # Energy Blast
-        [5,7,10], # Energy Blast
-        [6,6,1],  # Gotcha grab
-        [7,7,1],  # Gotcha grab
-        [1, 10], # Quadra slam
     ]
 
     
     env = Discretizer(env, combos=mk2_combos)
-    env = StochasticFrameSkip(env, n=4, stickprob=0.25)
 
     if max_episode_steps is not None:
         env = TimeLimit(env, max_episode_steps=max_episode_steps)
@@ -151,7 +134,7 @@ def wrap_deepmind_retro(env):
     Configure environment for retro games, using config similar to DeepMind-style Atari
     """
     env = WarpFrame(env) # Grayscale + Resize to 84x84
-    env = ClipRewardEnv(env) # Bin rewards to {-1, 0, 1} for stability
+    env = MaxAndSkipEnv(env, skip=4) # Bin rewards to {-1, 0, 1} for stability
     return env
 
 
@@ -173,19 +156,22 @@ def main():
     # DQN typically requires a buffer. 
     # Warning: Multiprocessing with Large Replay Buffers + FrameStack can consume massive RAM.
     # If you run out of RAM, reduce n_envs or buffer_size.
-    n_envs = 4
+    n_envs = 6
     venv = VecTransposeImage(VecFrameStack(SubprocVecEnv([make_env] * n_envs), n_stack=4))
 
     model = PPOAgent(
         env=venv,
-        learning_rate=3e-4,
+        learning_rate=1.5e-4,
         gamma=0.99,
         clip=0.2,
-        timesteps_per_batch=4800,
-        max_ep_len=1600,
-        train_epochs=5,
+        timesteps_per_batch=8192,
+        max_ep_len=3000,
+        n_updates_per_iteration=8,
+        batch_size=64,
+        ent_coef=0.001,
+        vf_coef=0.5,
     )
-    print(f"Training DQN on {args.game}...")
+    print(f"Training PPO on {args.game}...")
     model.learn(10_000_000, log_interval=1)
     
     # Save the model
