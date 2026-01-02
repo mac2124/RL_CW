@@ -7,16 +7,19 @@ import gymnasium as gym
 import numpy as np
 from custom_ppo.ppo import PPOAgent
 from gymnasium.wrappers import TimeLimit
-
+import torch
+from torch.distributions import Categorical
+import time
 from stable_baselines3.common.atari_wrappers import MaxAndSkipEnv, WarpFrame
 from stable_baselines3.common.vec_env import (
     SubprocVecEnv,
     VecFrameStack,
     VecTransposeImage,
+    VecNormalize
 )
 from stable_baselines3.common.monitor import Monitor
 
-import retro
+import stable_retro as retro
 
 # --- CUSTOM WRAPPERS ---
 
@@ -138,10 +141,126 @@ def wrap_deepmind_retro(env):
     return env
 
 
+def watch_agent_play():
+    parser = argparse.ArgumentParser()
+    # Default changed to MKII
+    parser.add_argument("--game", default="MortalKombatII-Genesis-v0") 
+    parser.add_argument("--state", default=retro.State.DEFAULT)
+    parser.add_argument("--scenario", default=None)
+    args = parser.parse_args()
+
+    def make_env():
+        env = make_retro(game=args.game, state=args.state, scenario=args.scenario)
+        env = wrap_deepmind_retro(env)
+        return env
+    # 1. Recreate Environment (Usually just 1 env is enough for watching)
+    env = SubprocVecEnv([make_env]) # Only 1 env needed to watch
+    env = VecFrameStack(env, n_stack=4)
+    env = VecTransposeImage(env)
+
+    # 2. Load Statistics
+    # We still load them because the agent expects inputs/rewards to be scaled
+    #env = VecNormalize.load("vec_normalise.pkl", env)
+
+    # CRITICAL SETTINGS FOR WATCHING:
+    env.training = False     # Do not update stats (freeze the "glasses")
+    env.norm_reward = False  # Return RAW rewards (e.g. +100) so you can see the real score
+
+    # 3. Initialize Agent
+    model = PPOAgent(env=env) # Hyperparams don't matter for watching, only playing
+    model.load("ppo_mk2.pt")
+
+    # 4. Play Loop
+    obs = env.reset()
+    done = False
+    i = 0
+    win_count = 0
+    avg_reward = 0
+    while i < 100:
+        # PPOAgent.policy returns (logits, values), we just need to sample the action
+        # You might need to add a predict() method to your PPOAgent or manually call the policy:
+        with torch.no_grad():
+            obs_tensor = torch.tensor(obs).float().to(model.device)
+            logits, _ = model.policy(obs_tensor)
+            dist = Categorical(logits=logits)
+            action = dist.sample().cpu().numpy()
+
+        obs, reward, done, info = env.step(action)
+        if done:
+            if reward > 0:
+                win_count += 1
+            avg_reward += reward
+            i += 1
+        # Optional: Render if your environment supports it, 
+        # or relying on the emulator window if visible.
+        # env.render() 
+        
+        time.sleep(0.01) # Slow down slightly to watch
+    
+    print(f"win rate: {win_count}")
+    print(f"reward: {avg_reward/100}")
+
+
+def resume_training():
+    parser = argparse.ArgumentParser()
+    # Default changed to MKII
+    parser.add_argument("--game", default="MortalKombatII-Genesis-v0") 
+    parser.add_argument("--state", default=retro.State.DEFAULT)
+    parser.add_argument("--scenario", default=None)
+    args = parser.parse_args()
+
+    def make_env():
+        env = make_retro(game=args.game, state=args.state, scenario=args.scenario)
+        env = wrap_deepmind_retro(env)
+        return env
+
+    # 1. Recreate the Base Environment (Must match exactly!)
+    n_envs = 6
+    env = SubprocVecEnv([make_env] * n_envs)
+    env = VecFrameStack(env, n_stack=4)
+    env = VecTransposeImage(env)
+
+    # 2. Load the Statistics
+    # Instead of creating a fresh VecNormalize, we load the old one
+    print("Loading environment stats...")
+    env = VecNormalize.load("vec_normalise.pkl", env)
+    
+    # Critical: Ensure it is in training mode so it keeps updating stats
+    env.training = True 
+    env.norm_reward = True
+
+    # 3. Re-initialize the Agent
+    # Note: You can change learning_rate here to lower it for fine-tuning
+    model = PPOAgent(
+        env=env,
+        learning_rate=1.0e-4, # Lower LR for resuming
+        gamma=0.99,
+        clip=0.2,
+        timesteps_per_batch=8192,
+        max_ep_len=3000,
+        n_updates_per_iteration=8,
+        batch_size=64,
+        ent_coef=0.01,
+        vf_coef=0.5,
+    )
+
+    # 4. Load the Agent Weights
+    print("Loading agent weights...")
+    model.load("ppo_mk3.pt")
+
+    # 5. Continue Learning
+    print("Resuming training...")
+    model.learn(20_000, log_interval=1)
+    
+    # Save again when done
+    model.save("ppo_mk3_continued.pt")
+    env.save("vec_normalize_continued.pkl")
+
+
 def main():
     parser = argparse.ArgumentParser()
     # Default changed to MKII
-    parser.add_argument("--game", default="MortalKombatII-Genesis") 
+    parser.add_argument("--game", default="MortalKombatII-Genesis-v0") 
     parser.add_argument("--state", default=retro.State.DEFAULT)
     parser.add_argument("--scenario", default=None)
     args = parser.parse_args()
@@ -158,9 +277,10 @@ def main():
     # If you run out of RAM, reduce n_envs or buffer_size.
     n_envs = 6
     venv = VecTransposeImage(VecFrameStack(SubprocVecEnv([make_env] * n_envs), n_stack=4))
+    env = VecNormalize(venv, norm_obs=False, norm_reward=True, clip_reward=10.0)
 
     model = PPOAgent(
-        env=venv,
+        env=env,
         learning_rate=1.5e-4,
         gamma=0.99,
         clip=0.2,
@@ -171,11 +291,15 @@ def main():
         ent_coef=0.001,
         vf_coef=0.5,
     )
+    #model.load("ppo_mk2.pt")
     print(f"Training PPO on {args.game}...")
-    model.learn(10_000_000, log_interval=1)
+    model.learn(8_000_000, log_interval=1)
     
     # Save the model
-    model.save("dqn_mk2")
+    model.save("ppo_mk3.pt")
+    env.save("vec_normalise.pkl")
 
 if __name__ == "__main__":
-    main()
+    watch_agent_play()
+    #resume_training()
+    #main()
