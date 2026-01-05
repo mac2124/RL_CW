@@ -1,43 +1,69 @@
-Run Instructions
+# Run Instructions
 
-Environment setup:
+## Environment Setup
 
-OS options:
-Windows 10, 11 (via WSL2)
-macOS 10.13 (High Sierra), 10.14 (Mojave)
-Linux (manylinux1). Ubuntu 22.04 is recommended
+### 1. Operating System Requirements
+Ensure you are running one of the following operating systems:
+* **Windows:** Windows 10 or 11 (via **WSL2**)
+* **Linux:** (manylinux1) Ubuntu 22.04 is recommended
+* **macOS:** 10.13 (High Sierra) or 10.14 (Mojave)
 
-for WSL2 follow: https://www.youtube.com/watch?v=vPnJiUR21Og
-for Linux installation follow: https://github.com/Farama-Foundation/stable-retro/blob/master/docs/linux_installation.md
-for macOS follow: https://github.com/Farama-Foundation/stable-retro/blob/master/docs/macos_installation.md
+### 2. Installation Guides
+* **Windows (WSL2):** Follow this [YouTube Setup Guide](https://www.youtube.com/watch?v=vPnJiUR21Og).
+* **Linux:** Follow the [Stable-Retro Linux Docs](https://github.com/Farama-Foundation/stable-retro/blob/master/docs/linux_installation.md).
+* **macOS:** Follow the [Stable-Retro macOS Docs](https://github.com/Farama-Foundation/stable-retro/blob/master/docs/macos_installation.md).
 
-Python: 3.7 to 3.12 is supported
+### 3. Python & Dependencies
+**Supported Python Versions:** 3.7 to 3.12
 
-We followed instructions from https://github.com/Farama-Foundation/stable-retro for installing all dependencies
-and virtual environment setup.
+> **Note:** Using a virtual environment is highly recommended.
 
-Using a virtual environment is highly recommended
+We followed the official instructions from [Farama-Foundation/stable-retro](https://github.com/Farama-Foundation/stable-retro) for installing all dependencies and setting up the virtual environment.
 
-We had to import Mortal Kombat 2 ROM ourselves from here (https://vimm.net/vault/2180). You must put the rom file (.md or .bin) inside a folder and run (python3 -m retro.import).
+## ROM Setup
+You must provide the game ROM yourself. We used the version from **[Vimm's Lair](https://vimm.net/vault/2180)**.
 
-How to run the code:
+1. Download the ROM file (`.md` or `.bin`).
+2. Place the file inside a folder within the project directory.
+3. Run the import command:
+   ```bash
+   python3 -m retro.import .
 
-The code is run from MK2_env_setup.py (python3 MK2_env_setup.py). In order to train an agent from scratch you must run the main() function
-if __name__ == "__main__":
-    main() 
-    # resume_training()
-    # watch_agent_play()
+### Running The Code
 
-To continue training an agent run the resume_training() function
-if __name__ == "__main__":
-    # main() 
-    resume_training()
-    # watch_agent_play()
+The code is run using the command
 
-and to watch an agent play without training run watch_agent_play()
-if __name__ == "__main__":
-    # main() 
-    # resume_training()
-    watch_agent_play()
+    
+    python3 MK2_env_setup.py
 
-These functions should be called within the if __name__ == "main" code block. After training is complete the model weights and reward scaling stats are saved in the same directory as the script (e.g. ppo_mk3.pt and vec_normalise.pkl).
+**Note:** if there is an error finding the game you may have to run the following:
+
+
+    python3 MK2_env_setup.py --game "insert exact game name here"
+
+
+To switch between Training, Resuming, and Watching, you must modify the if __name__ == "__main__": block at the bottom of the script.
+
+1. Training a new agent
+    ```Python
+
+    if __name__ == "__main__":
+        main()
+        # resume_training()
+        # watch_agent_play()
+2. Resume Training
+    ```Python
+
+    if __name__ == "__main__":
+        # main()
+        resume_training()
+        # watch_agent_play()
+3. Watch Agent Play
+    ```Python
+
+    if __name__ == "__main__":
+        # main()
+        # resume_training()
+        watch_agent_play()
+
+
