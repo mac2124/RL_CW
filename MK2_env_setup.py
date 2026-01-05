@@ -26,7 +26,6 @@ import stable_retro as retro
 class Discretizer(gym.ActionWrapper):
     """
     Wrap a gymnasium environment and translate discrete actions into multi-binary actions.
-    This is required for DQN to work with Retro environments.
     """
     def __init__(self, env, combos):
         super().__init__(env)
@@ -47,60 +46,12 @@ class Discretizer(gym.ActionWrapper):
             act = int(np.argmax(act))  # Example: Use argmax to map to a discrete action index
         return self._decode_discrete_action[act].copy()
 
-
-class StochasticFrameSkip(gym.Wrapper):
-    def __init__(self, env, n, stickprob):
-        gym.Wrapper.__init__(self, env)
-        self.n = n
-        self.stickprob = stickprob
-        self.curac = None
-        self.rng = np.random.RandomState()
-        self.supports_want_render = hasattr(env, "supports_want_render")
-
-    def reset(self, **kwargs):
-        self.curac = None
-        return self.env.reset(**kwargs)
-
-    def step(self, ac):
-        terminated = False
-        truncated = False
-        totrew = 0
-        for i in range(self.n):
-            # First step after reset, use action
-            if self.curac is None:
-                self.curac = ac
-            # First substep, delay with probability=stickprob
-            elif i == 0:
-                if self.rng.rand() > self.stickprob:
-                    self.curac = ac
-            # Second substep, new action definitely kicks in
-            elif i == 1:
-                self.curac = ac
-            if self.supports_want_render and i < self.n - 1:
-                ob, rew, terminated, truncated, info = self.env.step(
-                    self.curac,
-                    want_render=False,
-                )
-            else:
-                ob, rew, terminated, truncated, info = self.env.step(self.curac)
-            totrew += rew
-            if terminated or truncated:
-                break
-        return ob, totrew, terminated, truncated, info
-
-
 # --- CONFIGURATION ---
 
 def make_retro(*, game, state=None, max_episode_steps=4500, **kwargs):
     if state is None:
         state = retro.State.DEFAULT
     env = retro.make(game, state, **kwargs)
-
-    # --- FIXED GENESIS BUTTON MAPPING ---
-    # The Retro Genesis controller has 12 buttons.
-    # Array Order: ['B', 'A', 'MODE', 'START', 'UP', 'DOWN', 'LEFT', 'RIGHT', 'C', 'Y', 'X', 'Z']
-    # Indices:       0    1     2        3      4      5       6        7      8    9   10   11
-    
     mk2_combos = [
         [],             # 0: No-Op
         
@@ -137,7 +88,7 @@ def wrap_deepmind_retro(env):
     Configure environment for retro games, using config similar to DeepMind-style Atari
     """
     env = WarpFrame(env) # Grayscale + Resize to 84x84
-    env = MaxAndSkipEnv(env, skip=4) # Bin rewards to {-1, 0, 1} for stability
+    env = MaxAndSkipEnv(env, skip=4) # Frame Skipping with Max Pooling
     return env
 
 
